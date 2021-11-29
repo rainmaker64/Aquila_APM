@@ -346,6 +346,13 @@ void Copter::exit_mode(Mode *&old_flightmode,
         set_accel_throttle_I_from_pilot_throttle();
     }
 
+#if PRECISION_LANDING == ENABLED
+    if ((old_flightmode == &mode_land || old_flightmode == &mode_rtl)
+            && (new_flightmode != &mode_land && new_flightmode != &mode_rtl)) {
+        g2.precland_sm->reset();
+    }
+#endif
+
     // cancel any takeoffs in progress
     old_flightmode->takeoff_stop();
 
@@ -556,11 +563,31 @@ void Mode::land_run_vertical_control(bool pause_descent)
         // Constrain the demanded vertical velocity so that it is between the configured maximum descent speed and the configured minimum descent speed.
         cmb_rate = constrain_float(cmb_rate, max_land_descent_velocity, -abs(g.land_speed));
 
+#if PRECISION_LANDING == ENABLED
+        if (g2.precland_sm->is_enable() && g2.precland_sm->is_active() && !g2.precland_sm->in_failure()) {
+            if (g2.precland_sm->wp_nav_is_active()) {
+                pos_control->update_z_controller();
+                return;
+            }
+            if (!g2.precland_sm->is_final_landing()) {
+                cmb_rate = g2.precland_sm->get_desired_cmb_rate();
+            }
+        } else {
+            if (doing_precision_landing && copter.rangefinder_alt_ok() && copter.rangefinder_state.alt_cm > precland_min_altitude && copter.rangefinder_state.alt_cm < precland_max_altitude) {
+                // compute desired velocity
+
+                float max_descent_speed = abs(g.land_speed)*0.5f;
+                float land_slowdown = MAX(0.0f, pos_control->get_horizontal_error()*(max_descent_speed/precland_acceptable_error));
+                cmb_rate = MIN(-precland_min_descent_speed, -max_descent_speed+land_slowdown);
+            }
+        }
+#else
         if (doing_precision_landing && copter.rangefinder_alt_ok() && copter.rangefinder_state.alt_cm > precland_min_altitude && copter.rangefinder_state.alt_cm < precland_max_altitude) {
             float max_descent_speed = abs(g.land_speed)*0.5f;
             float land_slowdown = MAX(0.0f, pos_control->get_horizontal_error()*(max_descent_speed/precland_acceptable_error));
             cmb_rate = MIN(-precland_min_descent_speed, -max_descent_speed+land_slowdown);
-        }
+        }        
+#endif
     }
 
     // update altitude target and call position controller
@@ -573,21 +600,7 @@ void Mode::land_run_horizontal_control()
 {
     float target_roll = 0.0f;
     float target_pitch = 0.0f;
-    float target_yaw_rate = 0;    
-
-
-#if PRECISION_LANDING == ENABLED
-    bool doing_precision_landing = !copter.ap.land_repo_active && copter.precland.target_acquired();
-
-    if (doing_precision_landing && copter.rangefinder_alt_ok()) {
-        float start_alt = copter.precland.get_start_alti();
-
-        // If the drone is of out control region of precision landing, then turn off "doing_precision_landing"
-        if (copter.rangefinder_state.alt_cm > start_alt) {
-            doing_precision_landing = false;
-        }
-    }
-#endif    
+    float target_yaw_rate = 0;
 
     // relax loiter target if we might be landed
     if (copter.ap.land_complete_maybe) {
@@ -627,7 +640,9 @@ void Mode::land_run_horizontal_control()
         }
     }
 
-#if PRECISION_LANDING == ENABLED
+#if false
+    #if PRECISION_LANDING == ENABLED
+    bool doing_precision_landing = !copter.ap.land_repo_active && copter.precland.target_acquired();
     // run precision landing
     if (doing_precision_landing) {
         Vector2f target_pos, target_vel_rel;
@@ -642,6 +657,32 @@ void Mode::land_run_horizontal_control()
         pos_control->set_xy_target(target_pos.x, target_pos.y);
         pos_control->override_vehicle_velocity_xy(-target_vel_rel);
     }
+    #endif
+#else
+    #if PRECISION_LANDING == ENABLED
+    if (g2.precland_sm->is_enable() && g2.precland_sm->is_active() && g2.precland_sm->wp_nav_is_active() && !g2.precland_sm->in_failure()) {
+        copter.wp_nav->update_wpnav();
+        copter.attitude_control->input_euler_angle_roll_pitch_yaw(copter.wp_nav->get_roll(), copter.wp_nav->get_pitch(), copter.flightmode->auto_yaw.yaw(), true);
+        return;  // wp_nav handle the descend.
+    }
+    bool doing_precision_landing = !copter.ap.land_repo_active && copter.precland.target_acquired() && !g2.precland_sm->in_failure() && !g2.precland_sm->is_final_landing();
+    // run precision landing
+    if (doing_precision_landing) {
+
+            Vector2f target_pos, target_vel_rel;
+            if (!copter.precland.get_target_position_cm(target_pos)) {
+                target_pos.x = inertial_nav.get_position().x;
+                target_pos.y = inertial_nav.get_position().y;
+            }
+            if (!copter.precland.get_target_velocity_relative_cms(target_vel_rel)) {
+                target_vel_rel.x = -inertial_nav.get_velocity().x;
+                target_vel_rel.y = -inertial_nav.get_velocity().y;
+            }
+            pos_control->set_xy_target(target_pos.x, target_pos.y);
+            pos_control->override_vehicle_velocity_xy(-target_vel_rel);
+
+    }
+    #endif
 #endif
 
     // process roll, pitch inputs
