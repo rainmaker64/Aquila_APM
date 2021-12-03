@@ -16,55 +16,29 @@ public:
     void reset();
     void init();
     void run();
-    bool is_enable() const {
-        return _enabled;
-    }
-    bool is_active() const {
-        return _initialised && _state != PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
-    }
+    bool is_enable() const { return _enabled; }
+    bool in_failure() const { return psm_in_failure; }
+    bool get_glitch_state() const { return is_glitching; }
+    bool is_final_landing() const { return psm_is_final_landing; }
+    void set_emergency_flag(bool flag) { psm_is_emergency = flag; }
+    void set_glitch(bool isglitching) { is_glitching = isglitching; }
+    int32_t get_last_alt_above_ground_cm() const { return last_alt_above_ground_cm; }
+    bool is_active() const { return psm_initialised && psm_state != PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE; }
+    bool wp_nav_is_active() const { return psm_wp_nav_is_active; }
+    float get_desired_cmb_rate() const { return precland_sm_climb_rate; }
 
-    bool wp_nav_is_active() const {
-        return _wp_nav_is_active;
-    }
-
-    float get_desired_cmb_rate() const {
-        return _precland_sm_climb_rate;
-    }
-
-    bool is_final_landing() const {
-        return _is_final_landing;
-    }
-
-    bool in_failure() const {
-        return _in_failure;
-    }
-
-    void set_alt_above_ground_cm(int32_t alt_above_ground_cm) {
-        if (!_is_glitching) {
-            _last_alt_above_ground_cm = _alt_above_ground_cm;
+    void set_alt_above_ground_cm(int32_t altaboveground_cm) 
+    {
+        if (!is_glitching) 
+        {
+            last_alt_above_ground_cm = alt_above_ground_cm;
         }
-        _alt_above_ground_cm = alt_above_ground_cm;
+        alt_above_ground_cm = altaboveground_cm;
     }
-
-    void set_glitch(bool is_glitching) {
-        _is_glitching = is_glitching;
-    }
-
-    bool get_glitch_state() const {
-        return _is_glitching;
-    }
-
-    int32_t get_last_alt_above_ground_cm() const {
-        return _last_alt_above_ground_cm;
-    }
-
-    void set_emergency_flag(bool flag) {
-        _is_emergency = flag;
-    }
-
     void write_log();
     // parameter var table
     static const struct AP_Param::GroupInfo var_info[];
+
 private:
     enum class PLD_STATE: uint8_t {
         PRECISION_LAND_STATE_NOT_ACTIVE = 0,
@@ -75,65 +49,70 @@ private:
         PRECISION_LAND_STATE_SUCCESS,
         PRECISION_LAND_STATE_FAILED,
     };
-    bool _initialised;
-    bool _is_glitching;
-    int32_t _alt_above_ground_cm;
-    int32_t _last_alt_above_ground_cm;
-    float _precland_sm_climb_rate;
-    bool _wp_nav_is_active;
-    PLD_STATE _state;
+    /* Parameters */
     AP_Int8 _enabled;
     AP_Int8 _retry_max;
     AP_Int16 _emergency_behavior;
     AP_Int16 _descend_speed_max;
     AP_Int16 _failure_alt;
+    AP_Int32 _search_start_alt; // in cm
+    AP_Int32 _search_stop_alt;
     AP_Float _failure_posn;
-    bool _is_emergency;
+    AP_Float _acceptable_error_cm;
+    AP_Int32 _descend_stop_alt; //cm
+    AP_Int32 _start_land_alt_cm;
+
+    /* Local Variables */
+    static constexpr uint32_t WP_RADIUS = 50; // cm
+    static constexpr uint8_t AVG_FILTER_SIZE = 100;
+    static constexpr float MIN_DESCENT_SPEED = 10.0f;
+
+    bool is_glitching;
+    bool psm_initialised;
+    bool psm_wp_nav_is_active;
+    bool psm_is_emergency;
+    bool psm_first_pass;
+    bool psm_doing_first_pass;
+    bool psm_in_failure;
+    bool psm_is_final_landing;
+    float psm_avg_pos_error; //cm
+    float max_descend_speed;
+    float precland_sm_climb_rate;
+    uint8_t psm_retry_count;
+    int32_t alt_above_ground_cm;
+    int32_t last_alt_above_ground_cm;
+    uint32_t last_target_time;
+    uint32_t descend_timer;
+    PLD_STATE psm_state;
+    AverageFilter<float, float, AVG_FILTER_SIZE> avg_filter;
+    Location search_target;
+    Location init_location;
+
+    AC_PosControl &psm_pos_control;
+    AC_Loiter &psm_loiter_nav;
+    AC_WPNav &psm_wp_nav;
+    AC_PrecLand &psm_precland;
+
     // for EM_BHV parameter
     static constexpr uint8_t EM_BHV_NO_CHANGES = (1<<0);
     static constexpr uint8_t EM_BHV_DISABLE_SM = (1<<1);
     static constexpr uint8_t EM_BHV_DISABLE_RETRY = (1<<2);
 
-    AC_PosControl &_pos_control;
-    AC_Loiter &_loiter_nav;
-    AC_WPNav &_wp_nav;
-    AC_PrecLand &_precland;
-
-    Location _init_location;
     /*******************/
     void search_start();
     void search_run();
-    static constexpr uint32_t WP_RADIUS = 50; // cm
-    AP_Int32 _search_start_alt; // in cm
-    AP_Int32 _search_stop_alt;
-    Location _search_target;
-    bool _first_pass;
-    bool _doing_first_pass;
-    /********************/
     void calculate_slowdown();
     void descend_start();
     void descend_run();
-    static constexpr uint8_t AVG_FILTER_SIZE = 100;
-    AverageFilter<float, float, AVG_FILTER_SIZE> _avg_filter;
-    float _avg_pos_error; //cm
-    uint32_t _last_target_time;
-    AP_Int32 _descend_stop_alt; //cm
-    float _acceptable_error_cm = 15; //TODO param ?
-    float _max_descend_speed;
-    uint32_t _descend_timer;
-    static constexpr float MIN_DESCENT_SPEED = 10.0f;
 
+    void set_acceptable_error(float error);
     void descend_final_start();
     void descend_final_run();
-    bool _is_final_landing;
 
     void failed_start();
     void failed_run();
-    uint8_t _retry_count;
-    bool _in_failure;
-
+    
     void retry_start();
     void retry_run();
-
 };
 
