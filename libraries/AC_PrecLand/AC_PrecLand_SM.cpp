@@ -116,16 +116,16 @@ AC_PrecLand_SM::AC_PrecLand_SM(AC_PosControl& pos_control, AC_Loiter& loiter_nav
 */
 void AC_PrecLand_SM::reset()
 {
-    psm_state = PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
-    psm_is_final_landing = false;
-    psm_is_emergency = false;
-    psm_retry_count = 0;
-    psm_in_failure = false;
-    psm_wp_nav_is_active = false;
-    psm_initialised = false;
+    this->psm_state = PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
+    this->psm_is_final_landing = false;
+    this->psm_is_emergency = false;
+    this->psm_retry_count = 0;
+    this->psm_in_failure = false;
+    this->psm_wp_nav_is_active = false;
+    this->psm_initialised = false;
 
-    psm_wp_nav.reset_radius();
-    psm_wp_nav.reset_rangefinder_use();
+    this->psm_wp_nav.reset_radius();
+    this->psm_wp_nav.reset_rangefinder_use();
 }
 
 /*
@@ -133,19 +133,26 @@ void AC_PrecLand_SM::reset()
 */
 void AC_PrecLand_SM::init()
 {
-    if (!_enabled.get() || !psm_precland.enabled() || !AP::arming().is_armed()) 
+    if (_enabled.get() == false || this->psm_precland.enabled() == false || AP::arming().is_armed() == false) 
     {
         return;
     }
 
-    psm_initialised = true;
-    reset();
-    if (!AP::ahrs().get_position(init_location)) 
+    // Initialize the variables before start.
+    this->reset();
+
+    // If init_location is invalid, then set it to home position.
+    if (AP::ahrs().get_position(this->init_location) == false) 
     {
-        init_location = AP::ahrs().get_home();  // default to home in case of issue ...
+        this->init_location = AP::ahrs().get_home();  // default to home in case of issue ...
     }
-    //gcs().send_text(MAV_SEVERITY_INFO, "Initialise Precland");
-    search_start();
+
+    // set PSM initialized
+    this->psm_initialised = true;
+
+    gcs().send_text(MAV_SEVERITY_INFO, "Initialise Precland");
+
+    this->search_start();
 }
 
 /*
@@ -153,52 +160,52 @@ void AC_PrecLand_SM::init()
 */
 void AC_PrecLand_SM::run()
 {
-    if (!_enabled.get() || !psm_initialised || !psm_precland.enabled()) 
+    if (_enabled.get() == false || this->psm_initialised == false || this->psm_precland.enabled() == false) 
     {
         return;
     }
 
-    if (psm_is_emergency && _emergency_behavior.get() & EM_BHV_DISABLE_SM) 
+    if (this->psm_is_emergency == true && (_emergency_behavior.get() & EM_BHV_DISABLE_SM) != 0) 
     {
         return;
     }
 
-    if (!AP::arming().is_armed()) 
+    if (AP::arming().is_armed() == false) 
     {
-        if (psm_state == PLD_STATE::PRECISION_LAND_STATE_DESCEND_FINAL) 
+        if (this->psm_state == PLD_STATE::PRECISION_LAND_STATE_DESCEND_FINAL) 
         {
             gcs().send_text(MAV_SEVERITY_INFO, "Landed on target");
-            psm_state = PLD_STATE::PRECISION_LAND_STATE_SUCCESS;
+            this->psm_state = PLD_STATE::PRECISION_LAND_STATE_SUCCESS;
         } 
         else 
         {
-            if (psm_state != PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE && psm_state != PLD_STATE::PRECISION_LAND_STATE_SUCCESS) 
+            if (this->psm_state != PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE && this->psm_state != PLD_STATE::PRECISION_LAND_STATE_SUCCESS) 
             {
-                psm_state = PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
+                this->psm_state = PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
                 gcs().send_text(MAV_SEVERITY_INFO, "Unexpected Land");
             }
         }
     }
 
-    switch (psm_state) 
+    switch (this->psm_state) 
     {
         case PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE:
         case PLD_STATE::PRECISION_LAND_STATE_SUCCESS:
             break;
         case PLD_STATE::PRECISION_LAND_STATE_SEARCH:
-            search_run();
+            this->search_run();
             break;
         case PLD_STATE::PRECISION_LAND_STATE_DESCEND:
-            descend_run();
+            this->descend_run();
             break;
         case PLD_STATE::PRECISION_LAND_STATE_DESCEND_FINAL:
-            descend_final_run();
+            this->descend_final_run();
             break;
         case PLD_STATE::PRECISION_LAND_STATE_RETRY:
-            retry_run();
+            this->retry_run();
             break;
         case PLD_STATE::PRECISION_LAND_STATE_FAILED:
-            failed_run();
+            this->failed_run();
             break;
     }
 }
@@ -208,31 +215,32 @@ void AC_PrecLand_SM::run()
 */
 void AC_PrecLand_SM::search_start()
 {
-    psm_state = PLD_STATE::PRECISION_LAND_STATE_SEARCH;
+    this->psm_state = PLD_STATE::PRECISION_LAND_STATE_SEARCH;
 
-    psm_wp_nav.set_radius(WP_RADIUS);
-    psm_wp_nav.use_rangefinder(false);
-    psm_wp_nav.wp_and_spline_init();
+    this->psm_wp_nav.set_radius(WP_RADIUS);
+    this->psm_wp_nav.use_rangefinder(false);
+    this->psm_wp_nav.wp_and_spline_init();
 
-    if (psm_precland.target_acquired()) 
+    if (this->psm_precland.target_acquired() == true) 
     {
         Vector2f target_pos;
-        if (psm_precland.get_target_position_cm(target_pos)) 
+        if (this->psm_precland.get_target_position_cm(target_pos) == true) 
         {
-            psm_wp_nav.set_wp_destination(Vector3f(target_pos.x, target_pos.y, static_cast<float>(_search_start_alt.get() - 500)), false);
-            psm_wp_nav.get_wp_destination(search_target);
+            this->psm_wp_nav.set_wp_destination(Vector3f(target_pos.x, target_pos.y, static_cast<float>(_search_start_alt.get() - 500)), false);
+            this->psm_wp_nav.get_wp_destination(this->search_target);
         }
     } 
     else 
     {
-        search_target = init_location;
-        search_target.set_alt_cm((_search_start_alt.get() - 500), Location::AltFrame::ABOVE_HOME);
-        psm_wp_nav.set_wp_destination(search_target);
+        this->search_target = this->init_location;
+        this->search_target.set_alt_cm((_search_start_alt.get() - 500), Location::AltFrame::ABOVE_HOME);
+        this->psm_wp_nav.set_wp_destination(this->search_target);
     }
 
-    psm_first_pass = true;
-    psm_doing_first_pass = false;
-    psm_wp_nav_is_active = true;
+    this->psm_first_pass = true;
+    this->psm_doing_first_pass = false;
+    this->psm_wp_nav_is_active = true;
+
     gcs().send_text(MAV_SEVERITY_INFO, "search_start");
 }
 
@@ -241,51 +249,52 @@ void AC_PrecLand_SM::search_start()
 */
 void AC_PrecLand_SM::search_run()
 {
-    if (alt_above_ground_cm >= _search_start_alt.get() || psm_doing_first_pass) 
+    if (this->alt_above_ground_cm >= _search_start_alt.get() || this->psm_doing_first_pass) 
     {
-        if (psm_wp_nav.reached_wp_destination()) 
+        if (this->psm_wp_nav.reached_wp_destination() == true) 
         {
-            psm_doing_first_pass = false;
+            this->psm_doing_first_pass = false;
         }
     }
     else
     {
         // if we are under the stop alt, we get up
-        if (alt_above_ground_cm < _search_stop_alt.get()) 
+        if (this->alt_above_ground_cm < _search_stop_alt.get()) 
         {
             // get up to stop alt This unsure we always do the same patern and garanty the same descend phase
-            if (psm_first_pass) 
+            if (this->psm_first_pass) 
             {
-                search_target.set_alt_cm((_search_start_alt.get() - 500), Location::AltFrame::ABOVE_HOME);
-                psm_wp_nav.set_wp_destination(search_target);
-                psm_doing_first_pass = true;
-                psm_first_pass = false;
+                this->search_target.set_alt_cm((_search_start_alt.get() - 500), Location::AltFrame::ABOVE_HOME);
+                this->psm_wp_nav.set_wp_destination(search_target);
+                this->psm_doing_first_pass = true;
+                this->psm_first_pass = false;
             } 
             else 
             {
                 // inform user
-                psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
-                failed_start();
+                this->psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
+                this->failed_start();
             }
         }
         else
         {
-            psm_first_pass = false;
-            psm_doing_first_pass = false;
+            this->psm_first_pass = false;
+            this->psm_doing_first_pass = false;
+
             // if we lock the target, go on the target
-            if (psm_precland.target_acquired()) 
+            if (this->psm_precland.target_acquired() == true) 
             {
-                if (alt_above_ground_cm > _search_stop_alt + 1000) 
+                if (this->alt_above_ground_cm > _search_stop_alt.get() + 1000) 
                 {
                     Vector2f target_pos;
-                    if (psm_precland.get_target_position_cm(target_pos)) 
+                    if (this->psm_precland.get_target_position_cm(target_pos)) 
                     {
-                        psm_wp_nav.set_wp_destination(Vector3f(target_pos.x, target_pos.y, static_cast<float>(_search_stop_alt.get())), false);
+                        this->psm_wp_nav.set_wp_destination(Vector3f(target_pos.x, target_pos.y, static_cast<float>(_search_stop_alt.get())), false);
                     }
                 } 
                 else 
                 {
-                    descend_start();
+                     this->descend_start();
                 }
             } 
             else 
@@ -303,18 +312,22 @@ void AC_PrecLand_SM::search_run()
 void AC_PrecLand_SM::descend_start()
 {
     gcs().send_text(MAV_SEVERITY_INFO, "descend_start");
-    psm_state = PLD_STATE::PRECISION_LAND_STATE_DESCEND;
 
-    psm_avg_pos_error = 0.0f;
+    this->psm_state = PLD_STATE::PRECISION_LAND_STATE_DESCEND;
+
     avg_filter.reset();
-    psm_wp_nav.reset_radius();
-    psm_wp_nav.reset_rangefinder_use();
-    psm_loiter_nav.init_target();
-    psm_pos_control.init_xy_controller();
-    last_target_time = AP_HAL::millis();
-    psm_wp_nav_is_active = false;
 
-    max_descend_speed = MIN(-psm_pos_control.get_max_speed_down(), _descend_speed_max);
+    this->psm_avg_pos_error = 0.0f;
+
+    this->psm_wp_nav.reset_radius();
+    this->psm_wp_nav.reset_rangefinder_use();
+    this->psm_loiter_nav.init_target();
+    this->psm_pos_control.init_xy_controller();
+
+    this->last_target_time = AP_HAL::millis();
+    this->psm_wp_nav_is_active = false;
+
+    this->max_descend_speed = MIN(-this->psm_pos_control.get_max_speed_down(), _descend_speed_max.get());
 }
 
 /*
@@ -324,32 +337,33 @@ void AC_PrecLand_SM::calculate_slowdown()
 {
     // we get back using loiter_nav for tighter locking on target. We will just slowdown the descend according to the pos error
     // recenter and descend
-    if (psm_precland.target_acquired()) 
+    if (this->psm_precland.target_acquired() == true) 
     {
-        last_target_time = AP_HAL::millis();
-        psm_avg_pos_error = avg_filter.apply(psm_pos_control.get_horizontal_error());
+        this->last_target_time = AP_HAL::millis();
+        this->psm_avg_pos_error = avg_filter.apply(this->psm_pos_control.get_horizontal_error());
     } 
     else 
     {
-        if (AP_HAL::millis() - last_target_time > 500) 
+        if (AP_HAL::millis() - this->last_target_time > 500) 
         {  
             //timeout of 0.5sec for launching a retry
             // inform user
             gcs().send_text(MAV_SEVERITY_INFO, "Lost target for more than 0.5s");
-            psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
-            failed_start();
+            this->psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
+            this->failed_start();
+
             return;
         }
     }
 
     float land_slowdown = 0.0f;
-    if (psm_avg_pos_error > _acceptable_error_cm.get()) 
+    if (this->psm_avg_pos_error > _acceptable_error_cm.get()) 
     {
         // slowdown max at 2 * _acceptable_error_cm
-        land_slowdown = MAX(0.0f, psm_avg_pos_error * (max_descend_speed / (_acceptable_error_cm * 2.0f)));
+        land_slowdown = MAX(0.0f, this->psm_avg_pos_error * (this->max_descend_speed / (_acceptable_error_cm.get() * 2.0f)));
     }
 
-    precland_sm_climb_rate = MIN(-MIN_DESCENT_SPEED, -max_descend_speed + land_slowdown);
+    this->precland_sm_climb_rate = MIN(-MIN_DESCENT_SPEED, -this->max_descend_speed + land_slowdown);
 }
 
 /*
@@ -358,34 +372,35 @@ void AC_PrecLand_SM::calculate_slowdown()
 void AC_PrecLand_SM::descend_run()
 {
     // Calculate the slow-down rate
-    calculate_slowdown();
+    this->calculate_slowdown();
 
     // if the altitude is within "descend_stop_alt", then start to descend
-    if (alt_above_ground_cm <= _descend_stop_alt.get()) 
+    if (this->alt_above_ground_cm <= _descend_stop_alt.get()) 
     {
         // If the error is acceptable, then go to the final stage.
-        if (psm_avg_pos_error <= _acceptable_error_cm) 
+        if (this->psm_avg_pos_error <= _acceptable_error_cm.get()) 
         {
-            descend_final_start();
+            this->descend_final_start();
         } 
         else 
         {
             // try to give 1s on stationnary to alignate better
-            if (descend_timer == 0) 
+            if (this->descend_timer == 0) 
             {
-                descend_timer = AP_HAL::millis();
+                this->descend_timer = AP_HAL::millis();
             }
 
-            if (AP_HAL::millis() - descend_timer > 1000) 
+            if (AP_HAL::millis() - this->descend_timer > 1000) 
             {
                 // inform user
                 gcs().send_text(MAV_SEVERITY_INFO, "Failed to lock target accuratly");
-                psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
-                failed_start();
+                this->psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
+
+                this->failed_start();
             } 
             else 
             {
-                precland_sm_climb_rate = 0.1f; // slightly positive to ensure a little thrust up to stop inertia !
+                this->precland_sm_climb_rate = 0.1f; // slightly positive to ensure a little thrust up to stop inertia !
             }
         }
     }
@@ -398,8 +413,8 @@ void AC_PrecLand_SM::descend_final_start()
 {
     gcs().send_text(MAV_SEVERITY_INFO, "descend_final_start");
 
-    psm_state = PLD_STATE::PRECISION_LAND_STATE_DESCEND_FINAL;
-    max_descend_speed = MIN(-psm_pos_control.get_max_speed_down(), _descend_speed_max) * 0.5f;
+    this->psm_state = PLD_STATE::PRECISION_LAND_STATE_DESCEND_FINAL;
+    this->max_descend_speed = MIN(-this->psm_pos_control.get_max_speed_down(), _descend_speed_max.get()) * 0.5f;
 }
 
 /*
@@ -408,13 +423,13 @@ void AC_PrecLand_SM::descend_final_start()
 void AC_PrecLand_SM::descend_final_run()
 {
     // Check if it is final landing stage
-    if (alt_above_ground_cm <= (_descend_stop_alt * 0.25f) || alt_above_ground_cm <= _start_land_alt_cm.get()) 
+    if (this->alt_above_ground_cm <= (_descend_stop_alt.get() * 0.25f) || this->alt_above_ground_cm <= _start_land_alt_cm.get()) 
     {
-        psm_is_final_landing = true;  // unsure smooth landing by the land controler
+        this->psm_is_final_landing = true;  // unsure smooth landing by the land controler
     }
 
     // Calculate the slow-down rate
-    calculate_slowdown();
+    this->calculate_slowdown();
 }
 
 /*
@@ -422,28 +437,30 @@ void AC_PrecLand_SM::descend_final_run()
 */
 void AC_PrecLand_SM::failed_start()
 {
-    psm_is_final_landing = false;
-    bool allow_retry = !(psm_is_emergency && _emergency_behavior & EM_BHV_DISABLE_RETRY);
+    bool allow_retry = ((psm_is_emergency == true && (_emergency_behavior & EM_BHV_DISABLE_RETRY) != 0) == false);
 
     gcs().send_text(MAV_SEVERITY_INFO, "failed_start");
 
-    if (allow_retry && psm_retry_count < _retry_max.get()) 
+    this->psm_is_final_landing = false;
+
+    if (allow_retry == true && this->psm_retry_count < _retry_max.get()) 
     {
         gcs().send_text(MAV_SEVERITY_INFO, "Retry %d", psm_retry_count);
-        psm_retry_count++;
-        retry_start();
+
+        this->psm_retry_count++;
+        this->retry_start();
         return;
     }
     else
     {
-        psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
+        this->psm_state = PLD_STATE::PRECISION_LAND_STATE_FAILED;
 
-        search_target = init_location;
-        search_target.set_alt_cm(_failure_alt.get(), Location::AltFrame::ABOVE_HOME);
-        search_target.offset(_failure_posn.get(), 0);  // set safe land at _failure_posn of north of the beacon.
+        this->search_target = this->init_location;
+        this->search_target.set_alt_cm(_failure_alt.get(), Location::AltFrame::ABOVE_HOME);
+        this->search_target.offset(_failure_posn.get(), 0);  // set safe land at _failure_posn of north of the beacon.
 
-        psm_wp_nav.set_wp_destination(search_target);
-        psm_wp_nav_is_active = true;
+        this->psm_wp_nav.set_wp_destination(this->search_target);
+        this->psm_wp_nav_is_active = true;
 
         gcs().send_text(MAV_SEVERITY_INFO, "Failed to retry going to safe position");
     }
@@ -455,12 +472,12 @@ void AC_PrecLand_SM::failed_start()
 void AC_PrecLand_SM::failed_run()
 {
     // case retry count failure, land at X m from the home without precland
-    if (psm_wp_nav.reached_wp_destination()) 
+    if (this->psm_wp_nav.reached_wp_destination() == true) 
     {
         // else do normal land
-        psm_in_failure = true;
-        psm_wp_nav_is_active = false;
-        psm_state = PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
+        this->psm_in_failure = true;
+        this->psm_wp_nav_is_active = false;
+        this->psm_state = PLD_STATE::PRECISION_LAND_STATE_NOT_ACTIVE;
     }
 }
 
@@ -469,29 +486,29 @@ void AC_PrecLand_SM::failed_run()
 */
 void AC_PrecLand_SM::retry_start()
 {
-    psm_state = PLD_STATE::PRECISION_LAND_STATE_RETRY;
+    this->psm_state = PLD_STATE::PRECISION_LAND_STATE_RETRY;
 
-    psm_wp_nav.use_rangefinder(false);
-    psm_wp_nav.wp_and_spline_init();
+    this->psm_wp_nav.use_rangefinder(false);
+    this->psm_wp_nav.wp_and_spline_init();
 
     // if the target is acquired, then move the target point
-    if (psm_precland.target_acquired()) 
+    if (this->psm_precland.target_acquired() == true) 
     {
         Vector2f target_pos;
-        if (psm_precland.get_target_position_cm(target_pos)) 
+        if (this->psm_precland.get_target_position_cm(target_pos)) 
         {
-            psm_wp_nav.set_wp_destination(Vector3f(target_pos.x, target_pos.y, static_cast<float>(_search_start_alt.get())), false);
-            psm_wp_nav.get_wp_destination(search_target);
+            this->psm_wp_nav.set_wp_destination(Vector3f(target_pos.x, target_pos.y, static_cast<float>(_search_start_alt.get())), false);
+            this->psm_wp_nav.get_wp_destination(this->search_target);
         }
     } 
     else    // if the target is not acquired, then move the initial point
     {
-        search_target = init_location;
-        search_target.set_alt_cm(static_cast<int32_t>(_search_start_alt), Location::AltFrame::ABOVE_HOME);
-        psm_wp_nav.set_wp_destination(search_target);
+        this->search_target = this->init_location;
+        this->search_target.set_alt_cm(static_cast<int32_t>(_search_start_alt), Location::AltFrame::ABOVE_HOME);
+        this->psm_wp_nav.set_wp_destination(this->search_target);
     }
 
-    psm_wp_nav_is_active = true;
+    this->psm_wp_nav_is_active = true;
     gcs().send_text(MAV_SEVERITY_INFO, "retry_start");
 }
 
@@ -500,9 +517,9 @@ void AC_PrecLand_SM::retry_start()
 */
 void AC_PrecLand_SM::retry_run()
 {
-    if (psm_wp_nav.reached_wp_destination()) 
+    if (this->psm_wp_nav.reached_wp_destination() == true) 
     {
-        search_start();
+        this->search_start();
     }
 }
 
@@ -514,12 +531,12 @@ void AC_PrecLand_SM::write_log()
     struct log_Precland_SM pkt = {
             LOG_PACKET_HEADER_INIT(LOG_PRECLAND_SM_MSG),
             .time_us               = AP_HAL::micros64(),
-            .state                 =  static_cast<uint8_t>(psm_state),
-            .alt_above_ground      =  alt_above_ground_cm,
-            .last_alt_above_ground =  last_alt_above_ground_cm,
-            .climb_rate            =  precland_sm_climb_rate,
-            .avg_pos_error         =  psm_avg_pos_error,
-            .retry                 =  psm_retry_count,
+            .state                 =  static_cast<uint8_t>(this->psm_state),
+            .alt_above_ground      =  this->alt_above_ground_cm,
+            .last_alt_above_ground =  this->last_alt_above_ground_cm,
+            .climb_rate            =  this->precland_sm_climb_rate,
+            .avg_pos_error         =  this->psm_avg_pos_error,
+            .retry                 =  this->psm_retry_count,
     };
 
     AP::logger().WriteBlock(&pkt, sizeof(pkt));
