@@ -17,7 +17,7 @@
 #include <AP_Arming/AP_Arming.h>
 #include <AP_BattMonitor/AP_BattMonitor.h>
 
-
+#define     POLICE_LED      1
 
 extern const AP_HAL::HAL &hal;
 
@@ -384,6 +384,8 @@ void AP_CodevEsc::set_led_status(uint8_t id,uint8_t mode,uint16_t& led_status)
     if (_esc_led_on_time_us == 0) {
         _esc_led_on_time_us = AP_HAL::micros64();
         led_on_off = 0;
+        _esc_police_led_on_time_us = AP_HAL::micros64();
+        police_led_on_off = 0;
     }
 
     // open led if on
@@ -391,13 +393,17 @@ void AP_CodevEsc::set_led_status(uint8_t id,uint8_t mode,uint16_t& led_status)
         switch (id)
         {
         case 0:
+#if (POLICE_LED == 0)
             led_status |= RUN_RED_LED_ON_MASK | RUN_GREEN_LED_ON_MASK | RUN_BLUE_LED_ON_MASK;
+#endif            
             break;
         case 1:
             led_status |= tail_left_led;
             break;
         case 2:
+#if (POLICE_LED == 0)
             led_status |= RUN_RED_LED_ON_MASK | RUN_GREEN_LED_ON_MASK | RUN_BLUE_LED_ON_MASK;
+#endif            
             break;
         case 3:
             led_status |= tail_right_led;
@@ -417,13 +423,17 @@ void AP_CodevEsc::set_led_status(uint8_t id,uint8_t mode,uint16_t& led_status)
         switch (id)
         {
         case 0:
+#if (POLICE_LED == 0)
             led_status |= RUN_RED_LED_ON_MASK | RUN_GREEN_LED_ON_MASK | RUN_BLUE_LED_ON_MASK;
+#endif            
             break;
         case 1:
             led_status |= RUN_RED_LED_OFF_MASK | RUN_GREEN_LED_OFF_MASK | RUN_BLUE_LED_OFF_MASK;
             break;
         case 2:
+#if (POLICE_LED == 0)
             led_status |= RUN_RED_LED_ON_MASK | RUN_GREEN_LED_ON_MASK | RUN_BLUE_LED_ON_MASK;
+#endif            
             break;
         case 3:
             led_status |= RUN_RED_LED_OFF_MASK | RUN_GREEN_LED_OFF_MASK | RUN_BLUE_LED_OFF_MASK;
@@ -438,6 +448,44 @@ void AP_CodevEsc::set_led_status(uint8_t id,uint8_t mode,uint16_t& led_status)
             _esc_led_on_time_us = _esc_time_now_us;
         }
     }
+#if POLICE_LED == 1
+    if (police_led_on_off == 0) 
+    {
+        switch (id)
+        {
+        case 0:
+            led_status |= RUN_RED_LED_ON_MASK;
+            break;
+        case 2:
+            led_status |= RUN_BLUE_LED_ON_MASK;
+            break;
+        default:
+            break;
+        }
+
+        if (_esc_time_now_us - _esc_police_led_on_time_us > POLICE_LED_ON_TIME_MS * 1000) {
+            police_led_on_off = 1;
+            _esc_police_led_on_time_us = _esc_time_now_us;
+        }
+    }
+    else {
+        // Turn off led
+        switch (id)
+        {
+        case 0:
+            led_status |= RUN_BLUE_LED_ON_MASK;
+            break;
+        case 2:
+            led_status |= RUN_RED_LED_ON_MASK;
+            break;
+        }
+
+        if (_esc_time_now_us - _esc_police_led_on_time_us > POLICE_LED_OFF_TIME_MS * 1000) {
+            police_led_on_off = 0;
+            _esc_police_led_on_time_us = _esc_time_now_us;
+        }
+    }
+#endif    
 }
 
 
